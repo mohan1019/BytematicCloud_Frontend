@@ -1,7 +1,7 @@
 # Bytematic Cloud  
 
 **Production Deployment:**  
-🌐 [cloud.bytematic.in](https://cloud.bytematic.in/)  
+cloud.bytematic.in](https://cloud.bytematic.in/)  
 
 **Repositories:**  
 - **Frontend:** [BytematicCloud_Frontend](https://github.com/mohan1019/BytematicCloud_Frontend)  
