@@ -2,7 +2,9 @@
 
 import { useState, useRef } from 'react'
 import { api } from '@/lib/auth-context'
-import { X, Upload, FileIcon } from 'lucide-react'
+import { X, Upload, FileIcon, FolderOpen } from 'lucide-react'
+import FolderUploadModal from './FolderUploadModal'
+import { useToast } from '@/lib/toast-context'
 
 interface UploadModalProps {
   currentFolder: number | null
@@ -15,12 +17,50 @@ export default function UploadModal({ currentFolder, onClose, onUploadComplete }
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({})
   const [error, setError] = useState('')
+  const [showFolderModal, setShowFolderModal] = useState(false)
+  const [pendingFolderName, setPendingFolderName] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { showSuccess, showError, showWarning } = useToast()
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setSelectedFiles(Array.from(e.target.files))
-      setError('')
+      const files = Array.from(e.target.files)
+      
+      // Check if this is a folder upload by checking if files have webkitRelativePath
+      const isFolder = files.length > 0 && files[0].webkitRelativePath !== ''
+      
+      if (isFolder) {
+        // Extract folder name from the first file's path
+        const folderName = files[0].webkitRelativePath.split('/')[0]
+        setPendingFolderName(folderName)
+        setSelectedFiles(files)
+        setShowFolderModal(true)
+      } else {
+        setSelectedFiles(files)
+        setError('')
+      }
+    }
+  }
+
+  const handleFolderUploadConfirm = (preserveStructure: boolean, overwriteExisting: boolean) => {
+    setShowFolderModal(false)
+    setError('')
+    showSuccess(
+      'Folder selected successfully', 
+      `${selectedFiles.length} files from "${pendingFolderName}" ready for upload`
+    )
+  }
+
+  const handleSelectFolder = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.webkitdirectory = true
+      fileInputRef.current.click()
+      // Reset after use
+      setTimeout(() => {
+        if (fileInputRef.current) {
+          fileInputRef.current.webkitdirectory = false
+        }
+      }, 100)
     }
   }
 
@@ -32,6 +72,7 @@ export default function UploadModal({ currentFolder, onClose, onUploadComplete }
     e.preventDefault()
     const items = Array.from(e.dataTransfer.items)
     const files: File[] = []
+    let hasDirectories = false
 
     // Handle both files and folders
     for (const item of items) {
@@ -39,6 +80,9 @@ export default function UploadModal({ currentFolder, onClose, onUploadComplete }
         if (item.webkitGetAsEntry) {
           const entry = item.webkitGetAsEntry()
           if (entry) {
+            if (entry.isDirectory) {
+              hasDirectories = true
+            }
             await processEntry(entry, files)
           }
         } else {
@@ -48,8 +92,16 @@ export default function UploadModal({ currentFolder, onClose, onUploadComplete }
       }
     }
 
-    setSelectedFiles(files)
-    setError('')
+    if (hasDirectories && files.length > 0) {
+      // Extract folder name from the first file's path (if it has one)
+      const folderName = files.find(f => f.webkitRelativePath)?.webkitRelativePath.split('/')[0] || 'Dropped Folder'
+      setPendingFolderName(folderName)
+      setSelectedFiles(files)
+      setShowFolderModal(true)
+    } else {
+      setSelectedFiles(files)
+      setError('')
+    }
   }
 
   // Process directory entries recursively for folder uploads
@@ -214,18 +266,7 @@ export default function UploadModal({ currentFolder, onClose, onUploadComplete }
                 Select Files
               </button>
               <button
-                onClick={() => {
-                  if (fileInputRef.current) {
-                    fileInputRef.current.webkitdirectory = true
-                    fileInputRef.current.click()
-                    // Reset after use
-                    setTimeout(() => {
-                      if (fileInputRef.current) {
-                        fileInputRef.current.webkitdirectory = false
-                      }
-                    }, 100)
-                  }
-                }}
+                onClick={handleSelectFolder}
                 className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
               >
                 Select Folder
@@ -310,6 +351,20 @@ export default function UploadModal({ currentFolder, onClose, onUploadComplete }
           </div>
         </div>
       </div>
+
+      {/* Folder Upload Modal */}
+      <FolderUploadModal
+        isOpen={showFolderModal}
+        onClose={() => {
+          setShowFolderModal(false)
+          setSelectedFiles([])
+          setPendingFolderName('')
+        }}
+        onConfirm={handleFolderUploadConfirm}
+        folderName={pendingFolderName}
+        fileCount={selectedFiles.length}
+        isLoading={false}
+      />
     </div>
   )
 }

@@ -26,6 +26,8 @@ import ShareModal from './ShareModal'
 import FileThumbnail from './FileThumbnail'
 import FilePreviewModal from './FilePreviewModal'
 import StorageIndicator from './StorageIndicator'
+import DeleteConfirmationModal from './DeleteConfirmationModal'
+import { useToast } from '@/lib/toast-context'
 
 interface FileItem {
   id: number
@@ -52,6 +54,7 @@ interface FolderItem {
 export default function Dashboard() {
   const { user, logout } = useAuth()
   const router = useRouter()
+  const { showSuccess, showError, showWarning } = useToast()
   const [files, setFiles] = useState<FileItem[]>([])
   const [folders, setFolders] = useState<FolderItem[]>([])
   const [currentFolder, setCurrentFolder] = useState<number | null>(null)
@@ -71,6 +74,7 @@ export default function Dashboard() {
   const [selectedFolders, setSelectedFolders] = useState<Set<number>>(new Set())
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false)
   const [isSelectMode, setIsSelectMode] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -130,7 +134,7 @@ export default function Dashboard() {
     try {
       const token = localStorage.getItem('token')
       if (!token) {
-        alert('Please log in to download files')
+        showError('Authentication required', 'Please log in to download files')
         return
       }
       
@@ -145,8 +149,9 @@ export default function Dashboard() {
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
+      showSuccess('Download started', `Downloading ${file.original_name}`)
     } catch (error: any) {
-      alert('Download failed: ' + (error.message || 'Unknown error'))
+      showError('Download failed', error.message || 'Unknown error occurred during download')
     }
   }
 
@@ -166,9 +171,9 @@ export default function Dashboard() {
 
       // Copy to clipboard
       await navigator.clipboard.writeText(frontendShareUrl)
-      alert('Public share link created and copied to clipboard!')
+      showSuccess('Share link created!', 'Public share link created and copied to clipboard')
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to create share link')
+      showError('Failed to create share link', error.response?.data?.error || 'An error occurred while creating the share link')
     }
   }
 
@@ -176,7 +181,7 @@ export default function Dashboard() {
     const shareUrl = shareLinks[fileId]
     if (shareUrl) {
       await navigator.clipboard.writeText(shareUrl)
-      alert('Share link copied to clipboard!')
+      showSuccess('Link copied!', 'Share link copied to clipboard')
     }
   }
 
@@ -224,20 +229,16 @@ export default function Dashboard() {
     }
   }
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selectedFiles.size === 0 && selectedFolders.size === 0) {
-      alert('Please select items to delete')
+      showWarning('No items selected', 'Please select items to delete')
       return
     }
 
-    const fileCount = selectedFiles.size
-    const folderCount = selectedFolders.size
-    const totalCount = fileCount + folderCount
+    setShowDeleteModal(true)
+  }
 
-    if (!confirm(`Are you sure you want to delete ${totalCount} item${totalCount > 1 ? 's' : ''}? This action cannot be undone.`)) {
-      return
-    }
-
+  const confirmBulkDelete = async () => {
     setBulkDeleteLoading(true)
     try {
       const response = await api.delete('/api/folders/bulk/mixed', {
@@ -248,32 +249,34 @@ export default function Dashboard() {
       })
 
       const results = response.data.results
-      let message = response.data.message
-
+      
+      // Show success message
+      showSuccess('Items deleted successfully', response.data.message)
+      
+      // Show warnings for any issues
       if (results.files.unauthorized.length > 0 || results.folders.unauthorized.length > 0) {
-        message += '\n\nSome items could not be deleted due to insufficient permissions.'
+        showWarning('Permission denied', 'Some items could not be deleted due to insufficient permissions.')
       }
 
       if (results.folders.nonEmpty.length > 0) {
-        message += `\n\n${results.folders.nonEmpty.length} folder(s) could not be deleted because they are not empty.`
+        showWarning('Non-empty folders', `${results.folders.nonEmpty.length} folder(s) could not be deleted because they are not empty.`)
       }
 
       if (results.files.failed.length > 0 || results.folders.failed.length > 0) {
-        message += `\n\n${results.files.failed.length + results.folders.failed.length} item(s) failed to delete due to errors.`
+        showError('Delete failed', `${results.files.failed.length + results.folders.failed.length} item(s) failed to delete due to errors.`)
       }
-
-      alert(message)
       
       setSelectedFiles(new Set())
       setSelectedFolders(new Set())
       setIsSelectMode(false)
+      setShowDeleteModal(false)
       await loadData()
     } catch (error: any) {
       console.error('Bulk delete error:', error)
       if (error.response?.status === 403) {
-        alert('You do not have permission to delete some of the selected items.')
+        showError('Permission denied', 'You do not have permission to delete some of the selected items.')
       } else {
-        alert('Failed to delete items: ' + (error.response?.data?.error || error.message || 'Unknown error'))
+        showError('Delete failed', error.response?.data?.error || error.message || 'Unknown error')
       }
     } finally {
       setBulkDeleteLoading(false)
@@ -678,6 +681,22 @@ export default function Dashboard() {
           formatFileSize={formatFileSize}
         />
       )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={confirmBulkDelete}
+        title="Delete Selected Items"
+        message="Are you sure you want to delete the selected items? This action cannot be undone."
+        itemCount={selectedFiles.size + selectedFolders.size}
+        itemName={
+          selectedFiles.size + selectedFolders.size === 1 
+            ? "1 item" 
+            : `${selectedFiles.size + selectedFolders.size} items`
+        }
+        isLoading={bulkDeleteLoading}
+      />
     </div>
   )
 }

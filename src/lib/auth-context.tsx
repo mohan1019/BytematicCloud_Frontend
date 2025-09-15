@@ -22,7 +22,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000',
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002',
 })
 
 api.interceptors.request.use((config) => {
@@ -30,6 +30,12 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  
+  // Only set Content-Type for non-FormData requests
+  if (!(config.data instanceof FormData)) {
+    config.headers['Content-Type'] = 'application/json'
+  }
+  
   return config
 })
 

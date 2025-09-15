@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { Download, Image, Video, FileText } from 'lucide-react'
+import { Download, Image, Video, FileText, Eye, Music, Archive } from 'lucide-react'
 
 interface PublicFileInfo {
   fileName: string
@@ -11,6 +11,7 @@ interface PublicFileInfo {
   downloadCount: number
   isImage: boolean
   isVideo: boolean
+  hasThumbnail?: boolean
 }
 
 export default function PublicFilePage() {
@@ -64,8 +65,20 @@ export default function PublicFilePage() {
   const getFileIcon = (mimeType: string) => {
     if (mimeType.startsWith('image/')) return <Image className="h-16 w-16 text-green-500" />
     if (mimeType.startsWith('video/')) return <Video className="h-16 w-16 text-purple-500" />
-    return <FileText className="h-16 w-16 text-blue-500" />
+    if (mimeType.startsWith('audio/')) return <Music className="h-16 w-16 text-orange-500" />
+    if (mimeType === 'application/pdf') return <FileText className="h-16 w-16 text-red-500" />
+    if (mimeType.startsWith('text/')) return <FileText className="h-16 w-16 text-blue-500" />
+    if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('archive')) {
+      return <Archive className="h-16 w-16 text-yellow-500" />
+    }
+    return <FileText className="h-16 w-16 text-gray-500" />
   }
+
+  const isPDF = (mimeType: string) => mimeType === 'application/pdf'
+  const isAudio = (mimeType: string) => mimeType.startsWith('audio/')
+  const isText = (mimeType: string) => mimeType.startsWith('text/') || mimeType === 'application/json'
+  const isPreviewable = (mimeType: string) => 
+    fileInfo?.isImage || fileInfo?.isVideo || isPDF(mimeType) || isAudio(mimeType)
 
   if (loading) {
     return (
@@ -108,21 +121,39 @@ export default function PublicFilePage() {
         <div className="bg-white rounded-lg shadow-lg overflow-hidden">
           {/* File Preview */}
           {fileInfo.isImage && (
-            <div className="aspect-video bg-gray-100 flex items-center justify-center">
+            <div className="bg-gray-100 flex items-center justify-center min-h-[400px] max-h-[600px]">
               <img
                 src={`${process.env.NEXT_PUBLIC_API_URL}/api/files/public/${shareToken}/view`}
                 alt={fileInfo.fileName}
-                className="max-w-full max-h-full object-contain"
+                className="max-w-full max-h-full object-contain rounded"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement
+                  target.style.display = 'none'
+                  const parent = target.parentElement
+                  if (parent) {
+                    parent.innerHTML = `
+                      <div class="text-center">
+                        <div class="h-16 w-16 text-gray-400 mx-auto mb-4">
+                          <svg fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+                          </svg>
+                        </div>
+                        <p class="text-gray-600">Image preview not available</p>
+                      </div>
+                    `
+                  }
+                }}
               />
             </div>
           )}
 
           {fileInfo.isVideo && (
-            <div className="aspect-video bg-gray-100">
+            <div className="bg-gray-100">
               <video
                 controls
-                className="w-full h-full"
+                className="w-full max-h-[600px]"
                 preload="metadata"
+                poster={fileInfo.hasThumbnail ? `${process.env.NEXT_PUBLIC_API_URL}/api/files/public/${shareToken}/thumbnail` : undefined}
               >
                 <source src={`${process.env.NEXT_PUBLIC_API_URL}/api/files/public/${shareToken}/view`} type={fileInfo.mimeType} />
                 Your browser does not support the video tag.
@@ -130,11 +161,62 @@ export default function PublicFilePage() {
             </div>
           )}
 
-          {!fileInfo.isImage && !fileInfo.isVideo && (
-            <div className="aspect-video bg-gray-100 flex items-center justify-center">
-              <div className="text-center">
+          {isPDF(fileInfo.mimeType) && (
+            <div className="bg-gray-100 min-h-[600px]">
+              <iframe
+                src={`${process.env.NEXT_PUBLIC_API_URL}/api/files/public/${shareToken}/view`}
+                className="w-full h-[600px] border-0"
+                title={fileInfo.fileName}
+              />
+            </div>
+          )}
+
+          {isAudio(fileInfo.mimeType) && (
+            <div className="bg-gradient-to-br from-purple-50 to-blue-50 p-8 min-h-[300px] flex items-center justify-center">
+              <div className="text-center max-w-md">
+                <div className="mb-6">
+                  <Music className="h-20 w-20 text-purple-500 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">{fileInfo.fileName}</h3>
+                </div>
+                <audio
+                  controls
+                  className="w-full mb-4"
+                  preload="metadata"
+                >
+                  <source src={`${process.env.NEXT_PUBLIC_API_URL}/api/files/public/${shareToken}/view`} type={fileInfo.mimeType} />
+                  Your browser does not support the audio tag.
+                </audio>
+                <p className="text-sm text-gray-600">Audio file - {formatFileSize(fileInfo.size)}</p>
+              </div>
+            </div>
+          )}
+
+          {isText(fileInfo.mimeType) && (
+            <div className="bg-gray-50 border border-gray-200">
+              <div className="p-4 border-b bg-gray-100">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">Text Content Preview</span>
+                  <Eye className="h-4 w-4 text-gray-500" />
+                </div>
+              </div>
+              <iframe
+                src={`${process.env.NEXT_PUBLIC_API_URL}/api/files/public/${shareToken}/view`}
+                className="w-full h-[400px] border-0"
+                title={fileInfo.fileName}
+              />
+            </div>
+          )}
+
+          {!isPreviewable(fileInfo.mimeType) && (
+            <div className="bg-gray-100 flex items-center justify-center min-h-[300px]">
+              <div className="text-center max-w-md">
                 {getFileIcon(fileInfo.mimeType)}
-                <p className="mt-4 text-gray-600">Preview not available</p>
+                <h3 className="mt-4 text-lg font-medium text-gray-900">{fileInfo.fileName}</h3>
+                <p className="mt-2 text-gray-600">Preview not available for this file type</p>
+                <p className="mt-1 text-sm text-gray-500">Click download to view the file</p>
+                <div className="mt-4 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
+                  {fileInfo.mimeType}
+                </div>
               </div>
             </div>
           )}
@@ -142,12 +224,18 @@ export default function PublicFilePage() {
           {/* File Info */}
           <div className="p-6">
             <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">{fileInfo.fileName}</h2>
-                <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-xl font-semibold text-gray-900 truncate">{fileInfo.fileName}</h2>
+                <div className="flex items-center flex-wrap gap-x-4 gap-y-2 mt-2 text-sm text-gray-500">
                   <span>Size: {formatFileSize(fileInfo.size)}</span>
                   <span>Downloads: {fileInfo.downloadCount}</span>
                   <span>Type: {fileInfo.mimeType}</span>
+                  {isPreviewable(fileInfo.mimeType) && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      <Eye className="w-3 h-3 mr-1" />
+                      Previewable
+                    </span>
+                  )}
                 </div>
               </div>
               
